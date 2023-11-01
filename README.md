@@ -10,3 +10,4 @@ such as brainwave, was introduced to the input sensing,
 enabling the wearer to communicate with the metaverse space through their daily behavioral habits in the physical world. 
 In short, this interaction system provides the possibilities where people behave as if the metaverse space is the physical one, 
 as well as future application for this technology. 
+![Fig1](https://github.com/BeibeiZang2006/The-Bi-directional-Cognition-Interaction-with-XR-Metaverse-Space-/assets/149548267/cbd77181-8681-4c53-9c90-72d757c7b401)
