@@ -1,0 +1,178 @@
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Collections;
+using UnityEngine;
+using System.Threading;
+using System.Threading.Tasks;
+using System.ComponentModel;
+using System.Collections.Generic;
+using UnityEngine.UI;
+
+public class UDPServer : MonoBehaviour
+{
+    static Socket server;
+
+    public int Signal = 0; //信号值
+    public int Attention = 0; //专注度
+    public int Meditation = 0; //放松度
+    public int ServoAngle = 0; //舵机当前角度
+    public static UDPServer udpserver;
+    Text SigText;
+    Text AttText;
+    Text MedText;
+    Text ServoText;
+
+    Button ZeroButton;
+    Button MaxButton;
+    Button MusicButton;
+
+    private Transform CubeTransform;
+    private EndPoint point;
+
+    Thread ReadUPDThread;
+    void Start()
+    {
+        point = new IPEndPoint(IPAddress.Any, 0);
+        udpserver = this;
+        SigText = GameObject.Find("UI Sample/TextSig").GetComponent<Text>();
+        AttText = GameObject.Find("UI Sample/TextAtt").GetComponent<Text>();
+        MedText = GameObject.Find("UI Sample/TextMed").GetComponent<Text>();
+        ServoText = GameObject.Find("UI Sample/TextServo").GetComponent<Text>();
+
+        ZeroButton = GameObject.Find("UI Sample/ServoZero").GetComponent<Button>();
+        ZeroButton.onClick.AddListener(ZeroButtonOnClick);
+
+        MaxButton = GameObject.Find("UI Sample/ServoMax").GetComponent<Button>();
+        MaxButton.onClick.AddListener(MaxButtonOnClick);
+
+        MusicButton = GameObject.Find("UI Sample/MusicButton").GetComponent<Button>();
+        MusicButton.onClick.AddListener(MusicButtonOnClick);
+
+        //CubeTransform = GameObject.Find("Cube").GetComponent<Transform>();
+
+        server = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        server.Bind(new IPEndPoint(IPAddress.Parse("192.168.11.138"), 8080));//这里填写VR的IP地址和端口
+        Debug.Log("服务端已经开启");
+
+        ReadUPDThread = new Thread(ReadUDPEvent);
+        ReadUPDThread.IsBackground = true;
+        ReadUPDThread.Start();
+    }
+
+    /// <summary>
+    /// 向特定ip的主机的端口发送数据报
+    /// </summary>
+    static void sendMsg(string ipAddress, int ipPort, string msg)
+    {
+        EndPoint point = new IPEndPoint(IPAddress.Parse(ipAddress), ipPort);
+        server.SendTo(Encoding.UTF8.GetBytes(msg), point);
+    }
+
+
+    public void StartServo()
+    {
+        Debug.Log("启动舵机");
+        string servoStr ="SSSSS;";
+        sendMsg("192.168.11.111", 8080, servoStr);//这里填写ESP32的IP地址
+    }
+
+    public void StopServo()
+    {
+        Debug.Log("停止舵机");
+        string servoStr = "TTTTT;";
+        sendMsg("192.168.11.111", 8080, servoStr);//这里填写ESP32的IP地址
+    }
+
+
+    /// <summary>
+    /// 向电脑发送播放音乐的数据
+    /// </summary>
+    public void PlayMusic()
+    {
+        string splayMusicStr = "playmusic";
+        sendMsg("192.168.11.194", 8081, splayMusicStr);//这里填写播放音乐的电脑IP地址
+        Debug.Log("控制电脑播放音乐");
+    }
+
+    public void PlayMusic2()
+    {
+        string splayMusicStr = "playmusic2";
+        sendMsg("192.168.11.194", 8081, splayMusicStr);//这里填写播放音乐的电脑IP地址
+        Debug.Log("控制电脑播放音乐");
+    }
+
+    void Update()
+    {
+        SigText.text = "Signal:" + Signal;
+        AttText.text = "Attention:" + Attention;
+        MedText.text = "Meditation:" + Meditation;
+        ServoText.text = "Servo:" + ServoAngle;
+    }
+
+    void ReadUDPEvent()
+    {
+        Thread.Sleep(10);
+        while (true)
+        {
+            EndPoint point = new IPEndPoint(IPAddress.Any, 0);//用来保存发送方的ip和端口号
+            byte[] buffer = new byte[1024];
+            int length = server.ReceiveFrom(buffer, ref point);//接收数据报
+            string message = Encoding.UTF8.GetString(buffer, 0, length);
+            if (message.Length > 0)
+            {
+                string[] TGAMArry = message.Split(',');
+                if (TGAMArry.Length >= 4)
+                {
+                    Signal = Convert.ToInt32(TGAMArry[0]);
+                    Attention = Convert.ToInt32(TGAMArry[1]);
+                    Meditation = Convert.ToInt32(TGAMArry[2]);
+                    ServoAngle = Convert.ToInt32(TGAMArry[3]);
+                    
+                    
+                    //CubeTransform.position = new Vector3((float)Attention * 10, 500f, 0f);//通过Vector来new一个对象的位置
+                }
+                Debug.Log(string.Format("{0}:{1}", point.ToString(), message));
+            }
+            Thread.Sleep(10);
+        }
+    }
+
+
+    /// <summary>
+    /// 舵机旋转到0度
+    /// </summary>
+    private void ZeroButtonOnClick()
+    {
+        StopServo();
+    }
+
+    /// <summary>
+    /// 舵机旋转到180度
+    /// </summary>
+    private void MaxButtonOnClick()
+    {
+        StartServo();
+    }
+
+    /// <summary>
+    /// 音乐播放按钮
+    /// </summary>
+    private void MusicButtonOnClick()
+    {
+        PlayMusic();
+    }
+
+    void OnApplicationQuit()
+    {
+        server.Close();
+        if (ReadUPDThread.IsAlive)
+        {
+            ReadUPDThread.Abort();
+        }
+    }
+}
