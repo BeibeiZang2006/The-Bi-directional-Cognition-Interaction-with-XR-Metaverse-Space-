@@ -1,0 +1,246 @@
+#include <WiFi.h>
+#include <Arduino.h>
+#include <WiFiUdp.h> //调用WIFIUDP库
+#include <ESP32Servo.h> 
+#define LED 2        // LED引脚
+/*
+ 通过UART串口显示信号值、注意力及放松度的值
+ */
+#define BAUDRATE 9600
+#define DEBUGOUTPUT 0
+
+//校验相关变量
+int   generatedChecksum = 0;
+byte  checksum = 0; 
+
+//接收数据长度和数据数组
+byte  payloadLength = 0;
+byte  payloadData[32] = {0};//总共接收32个自己的数据
+
+//需要读取的信息变量
+byte signalquality = 0;//信号质量
+byte attention = 0;    //注意力值
+byte meditation = 0;   //放松度值
+unsigned int delta_wave = 0;
+unsigned int theta_wave = 0;
+unsigned int low_alpha_wave = 0;
+unsigned int high_alpha_wave = 0;
+unsigned int low_beta_wave = 0;
+unsigned int high_beta_wave = 0;
+unsigned int low_gamma_wave = 0;
+unsigned int mid_gamma_wave = 0;
+
+WiFiUDP Udp; // 创建wifiUdp
+char Rdata[255];      // 接收服务器发送的字符串
+
+unsigned int localPort = 8080;     // 通讯端口 需与服务器相同
+const char *ssid = "YIM";   // WIFI名称 全称
+const char *password = "yimart902"; //  WIFI密码
+
+IPAddress ipServer(192, 168, 11, 138); // 服务器IP地址设置 VR的IP地址
+IPAddress ipCliente(192, 168, 11, 111);  // 与服务器不同的IP  ESP32自身的IP地址 根据VR的前字段修改,最后一位随意
+IPAddress Subnet(255, 255, 255, 0);    // 网关掩码
+
+String TGAMData = "";
+
+Servo myservo;
+int servoPin = 13;
+int servoangle = 0;
+
+bool servoMove = false;
+
+// WIFI 初始化
+void WiFi_init()
+{
+  WiFi.mode(WIFI_STA);                  // 将WiFi设置为STA站点模式
+  WiFi.begin(ssid, password);           // 打开WIFI，连接到家里的路由器
+  while (WiFi.status() != WL_CONNECTED) // 等待连接
+  {
+  }
+  digitalWrite(LED, HIGH);                  // LED亮
+  WiFi.config(ipCliente, ipServer, Subnet); // 设置WIFI连接的本机IP和服务器IP，和网络掩码
+  Udp.begin(localPort);                     // 打开端口
+}
+
+// LED 初始化
+void LED_init()
+{
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW); // LED灭
+}
+
+// 舵机 初始化
+void Servo_init()
+{
+   ESP32PWM::allocateTimer(0);
+   ESP32PWM::allocateTimer(1);
+   ESP32PWM::allocateTimer(2);
+   ESP32PWM::allocateTimer(3);
+   myservo.setPeriodHertz(50);
+   myservo.attach(servoPin, 500, 2400);
+   myservo.write(0);
+}
+
+//初始化
+void setup() 
+{
+  Servo_init();
+  LED_init();
+  WiFi_init();
+  Serial.begin(BAUDRATE);  
+}
+
+//从串口读取一个字节数据
+byte ReadOneByte() 
+{
+  int ByteRead;
+  while(!Serial.available());
+  ByteRead = Serial.read();
+  return ByteRead;//返回读到的字节
+}
+
+//读取串口数据
+void read_serial_data()
+{
+    //寻找数据包起始同步字节，2个
+    if(ReadOneByte() == 0xAA)//先读一个
+    {
+      if(ReadOneByte() == 0xAA)//读第二个
+      {
+        payloadLength = ReadOneByte();//读取第三个，数据包字节的长度
+        if(payloadLength == 0x20)//如果接收到的是大包数据才继续读取，小包数据则舍弃不读取
+        {
+          generatedChecksum = 0; //校验变量清0       
+          for(int i = 0; i < payloadLength; i++)//连续读取32个字节
+          {  
+            payloadData[i] = ReadOneByte();//读取指定长度数据包中的数据
+            generatedChecksum += payloadData[i];//计算数据累加和
+          }         
+          checksum = ReadOneByte();//读取校验字节  
+          //校验
+          generatedChecksum = (~generatedChecksum)&0xff;       
+          //比较校验字节
+          if(checksum == generatedChecksum)//数据接收正确，继续处理 
+          {    
+            signalquality = 0;//信号质量变量
+            attention = 0;    //注意力值变量
+            //赋值数据
+            signalquality = payloadData[1];//信号值   
+            delta_wave = (payloadData[7] << 16) + (payloadData[8] << 8) + payloadData[9];
+            theta_wave = (payloadData[10] << 16) + (payloadData[11] << 8) + payloadData[12];
+            low_alpha_wave = (payloadData[13] << 16) + (payloadData[14] << 8) + payloadData[15];
+            high_alpha_wave = (payloadData[16] << 16) + (payloadData[17] << 8) + payloadData[18];
+            low_beta_wave = (payloadData[19] << 16) + (payloadData[20] << 8) + payloadData[21];
+            high_beta_wave = (payloadData[22] << 16) + (payloadData[23] << 8) + payloadData[24];
+            low_gamma_wave = (payloadData[25] << 16) + (payloadData[26] << 8) + payloadData[27];
+            mid_gamma_wave = (payloadData[28] << 16) + (payloadData[29] << 8) + payloadData[30];   
+            attention = payloadData[29];//注意力值
+            meditation = payloadData[31];//放松度值
+            #if !DEBUGOUTPUT         
+            
+            /*//打印信号质量
+            //Serial.print("SignalQuality: ");
+            Serial.print(signalquality, DEC);
+            Serial.print(",");
+            //打印注意力值
+            //Serial.print("  Attation: ");
+            Serial.print(attention, DEC);
+            Serial.print(",");
+            //打印放松度值
+            //Serial.print("  Meditation: ");
+            Serial.print(meditation, DEC);
+            Serial.print(",");
+            Serial.print(delta_wave, DEC);
+            Serial.print(",");
+            Serial.print(theta_wave, DEC);
+            Serial.print(",");
+            Serial.print(low_alpha_wave, DEC);
+            Serial.print(",");
+            Serial.print(high_alpha_wave, DEC);
+            Serial.print(",");
+            Serial.print(low_beta_wave, DEC);
+            Serial.print(",");
+            Serial.print(high_beta_wave, DEC);
+            Serial.print(",");
+            Serial.print(low_gamma_wave, DEC);
+            Serial.print(",");
+            Serial.print(mid_gamma_wave, DEC);
+            //换行
+            Serial.println("\n"); */    
+
+            TGAMData.concat(signalquality);
+            TGAMData.concat(",");
+            TGAMData.concat(attention);
+            TGAMData.concat(",");
+            TGAMData.concat(meditation);
+            TGAMData.concat(",");
+            /*TGAMData.concat(delta_wave);
+            TGAMData.concat(",");
+            TGAMData.concat(theta_wave);
+            TGAMData.concat(",");
+            TGAMData.concat(low_alpha_wave);
+            TGAMData.concat(",");
+            TGAMData.concat(high_alpha_wave);
+            TGAMData.concat(",");
+            TGAMData.concat(low_beta_wave);
+            TGAMData.concat(",");
+            TGAMData.concat(high_beta_wave);
+            TGAMData.concat(",");
+            TGAMData.concat(low_gamma_wave);
+            TGAMData.concat(",");
+            TGAMData.concat(mid_gamma_wave);
+            TGAMData.concat(",");*/
+            TGAMData.concat(servoangle);
+            TGAMData.concat("\r\n");
+            
+            Udp.beginPacket(ipServer, localPort); // 准备发送数据包，设置对应的IP地址和端口的客户端
+            Udp.print(TGAMData);                    // 将要发送的数据发送给客户端
+            Udp.endPacket();                        // 结束发送
+            TGAMData = "";
+            if(servoMove)
+            {
+              if(servoangle == 0)
+              {
+                servoangle = 180;
+              }
+              else if(servoangle == 180)
+              {
+                 servoangle = 0; 
+              }
+              myservo.write(servoangle);
+            }
+            #endif              
+          } 
+        } 
+      }
+    }
+}
+
+//主循环
+void loop() 
+{
+  int udp_data = Udp.parsePacket(); // 接收收到的数据包大小
+  if (udp_data)                     // 判断是否有数据
+  {
+    //Serial.printf("Received %d byte %s, port %d\n", udp_data, Udp.remoteIP().toString().c_str(), Udp.remotePort()); // 串口输出接收到的数据数量，发送客户端的IP和端口
+    Udp.read(Rdata, 255);                                                                                        // 读取接收到的数据
+    String RdataStr = Rdata;
+    String ServoAngleStr = "";
+    if(RdataStr.length() >= 2)
+    {
+        if(RdataStr[0] == 'S')
+        {
+          servoMove = true;
+        }
+        else
+        {
+          servoangle = 0;
+          myservo.write(servoangle);
+          servoMove = false;  
+        }
+    }
+    RdataStr = "";
+    ServoAngleStr = "";
+  }
+  read_serial_data();//读取串口数据
+}
