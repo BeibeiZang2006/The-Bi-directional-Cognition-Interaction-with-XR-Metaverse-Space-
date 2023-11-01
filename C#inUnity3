@@ -1,0 +1,124 @@
+using System.Collections;
+using UnityEngine;
+
+public class DistanceToObject1 : MonoBehaviour
+{
+    public GameObject targetObject; // 指定要计算的目标物体
+    public float Distance; // 存储与目标物体的距离
+    public float Speed = 5.0f; // 移动速度
+    public float NearDistance = 10.0f; // 物体与摄像机的距离
+    public float MinDistance = 5.0f; // 物体与摄像机的距离
+    public float MaxDistance = 20.0f; // 物体与摄像机的距离
+
+    public bool isMoveToCamera = true;//物体是否需要向摄像头移动
+    public bool isClosed = false;//物体与摄像头是否已经贴近（物体是否和摄像头之间保持最小限制距离）
+    public bool isReset = false;//物体是否复位
+    public bool isServo = false;
+
+    private Vector3 lastPosition;//物体上一次坐标，用来判断左右运动的
+    private Vector3 InitPosition;//物体初始坐标，用于回归原位的
+
+    private void Start()
+    {
+        InitPosition = targetObject.transform.position;
+    }
+
+    void Update()
+    {
+        // 确保目标物体存在
+        if (targetObject != null)
+        {
+            // 计算摄像机与目标物体之间的距离
+            Distance = Mathf.Abs(Vector3.Distance(transform.position, targetObject.transform.position));
+            //Distance = Mathf.Abs(targetObject.transform.position.z - transform.position.z);
+            if (!isClosed)
+            {
+                if (Distance <= NearDistance)
+                {
+                    if (isMoveToCamera)
+                    {
+                        StartCoroutine(MoveToCamera());
+                    }
+                }
+            }
+            else
+            {
+                if ((transform.position.z - lastPosition.z) <= 0)
+                {
+                    targetObject.transform.position = Vector3.MoveTowards(targetObject.transform.position, transform.position + (transform.forward * MinDistance), Time.deltaTime * Speed);
+                }
+                else if ((transform.position.z - lastPosition.z) > 0)
+                {
+                    StartCoroutine(PositionRest());
+                }
+            }
+            lastPosition = transform.position;
+        }
+        else
+        {
+            Debug.LogError("Target object is missing.");
+        }
+    }
+
+    IEnumerator PositionRest()
+    {
+        Debug.Log("物体开始复位运动...");
+        isClosed = false;
+        isServo = false;
+        UDPServer.udpserver.StopServo();
+        while (true)
+        {
+            if (Vector3.Distance(targetObject.transform.position, InitPosition) > 0.1)
+            {
+                // 计算当前位置与目标位置之间的方向
+                Vector3 direction = (InitPosition - targetObject.transform.position).normalized;
+                // 根据速度计算每次移动的距离
+                float distance = Speed * Time.deltaTime * 5;
+                // 更新位置
+                targetObject.transform.position += direction * distance;
+            }
+            else
+            {
+                targetObject.transform.position = InitPosition;
+                isMoveToCamera = true;
+                isReset = false;
+                Debug.Log("物体复位完成!!!");
+                break;
+            }
+            yield return null;
+        }
+    }
+
+
+    IEnumerator MoveToCamera()
+    {
+        Debug.Log("物体开始朝摄像头方向移动，主动靠近摄像头...");
+        isMoveToCamera = false;
+        while (true)
+        {
+            if (Vector3.Distance(targetObject.transform.position, transform.position) > (MinDistance + 0.1))
+            {
+                // 计算当前位置与目标位置之间的方向
+                Vector3 direction = (transform.position - targetObject.transform.position).normalized;
+                // 根据速度计算每次移动的距离
+                float distance = Speed * Time.deltaTime * 4f;
+                // 更新位置
+                targetObject.transform.position += direction * distance;
+            }
+            else
+            {
+                isClosed = true;
+                isServo = true;
+                UDPServer.udpserver.StartServo();
+                Debug.Log("物体向摄像头靠近完成!!!");
+                break;
+            }
+            yield return null;
+        }
+    }
+
+    void OnApplicationQuit()
+    {
+        StopAllCoroutines();
+    }
+}
