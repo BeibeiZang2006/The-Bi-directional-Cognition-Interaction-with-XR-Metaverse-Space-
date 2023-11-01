@@ -1,0 +1,57 @@
+using System.Collections;
+using UnityEngine;
+using UnityEngine.Audio;
+
+public class DistanceToObject2 : MonoBehaviour
+{
+    public GameObject targetObject; // 指定要计算的目标物体
+    public float Distance; // 存储与目标物体的距离
+    public float minDistance;
+    public bool isPlayMusic = false;
+
+    public AudioSource audioSource;
+    public AudioClip audioClip;
+
+    private void Start()
+    {
+        
+    }
+
+    void Update()
+    {
+        // 确保目标物体存在
+        if (targetObject != null)
+        {
+            // 计算摄像机与目标物体之间的距离
+            Distance = Mathf.Abs(Vector3.Distance(transform.position, targetObject.transform.position));
+            if (Distance <= minDistance)
+            {
+                if (!isPlayMusic)
+                {
+                    isPlayMusic = true;
+                    Debug.Log("PlayMusic");
+                    //在这里写播放音乐的代码
+                    if (audioSource != null && audioClip != null)
+                    {
+                        audioSource.clip = audioClip;
+                        audioSource.Play();
+                    }
+                }
+            }
+            else
+            {
+                isPlayMusic = false;
+                audioSource.Stop();
+            }
+        }
+        else
+        {
+            Debug.LogError("Target object is missing.");
+        }
+    }
+
+    void OnApplicationQuit()
+    {
+
+    }
+}
